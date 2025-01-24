@@ -336,7 +336,7 @@ def main():
     shepherd = Shepherd(config=config)
 
     # Initialize environment
-    scene_path = "./Replica-Dataset/data/apartment_2/mesh.ply"
+    scene_path = "./Replica-Dataset/dataset/apartment_0/habitat/mesh_semantic.ply"
 
     try:
         env = HabitatEnv(scene_path, shepherd)
