@@ -179,6 +179,10 @@ class DatabaseWrapper:
             best_similarity = -float("inf")
 
             # Get embeddings from database
+            # TODO: Déterminer si il y a une perte de performance à laisser la BD nous 
+            # donner le vecteur le plus près au lieu de faire une boucle sur tous les vecteurs.
+            # Il est possible de configurer la BD pour utiliser cosine sim. comme métrique et lui demander
+            # de renvoyer top k résultats
             results = self.collection.get(include=["embeddings"])
 
             # Check each existing object
