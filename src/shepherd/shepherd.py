@@ -151,7 +151,7 @@ class Shepherd:
                         "class_id": detection.get("class_id", 0),
                         "confidence": detection["confidence"],
                     }
-
+                    
                     # Store in database and get object ID
                     object_id, needs_caption = self.database.store_object(
                         embedding=embedding,
