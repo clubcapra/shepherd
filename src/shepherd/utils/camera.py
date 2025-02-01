@@ -25,6 +25,11 @@ class CameraUtils:
             "forward_axis": "-z",
             "camera_offset": np.array([0, 0, 0]),  # No additional offset needed
         },
+        "pybullet": {
+            "up_axis": "y",
+            "forward_axis": "x",
+            "camera_offset": np.array([0, 0, 0]),  # No additional offset needed
+        }
     }
 
     def __init__(
