@@ -10,6 +10,7 @@ from ultralytics.models.fastsam import FastSAMPredictor
 
 from ..segmentation_model import SegmentationModel
 
+import gc
 
 class SAM(SegmentationModel):
     """
@@ -40,6 +41,17 @@ class SAM(SegmentationModel):
             "save": False,
         }
         self.predictor = FastSAMPredictor(overrides=overrides)
+
+    def unload_model(self):
+        """Unload SAM model to free up memory."""
+        if hasattr(self, 'predictor'):
+            # Access the underlying model in the predictor
+            if hasattr(self.predictor, 'model'):
+                if next(self.predictor.model.parameters()).is_cuda:
+                    del self.predictor.model
+            self.predictor = None
+        # Force garbage collection just for the deleted objects
+        gc.collect()
 
     def preprocess(self, image: np.ndarray) -> np.ndarray:
         """Preprocess image for FastSAM."""

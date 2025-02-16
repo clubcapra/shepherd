@@ -10,6 +10,7 @@ from ultralytics import YOLO as UltralyticsYOLO
 
 from ..detection_model import DetectionModel
 
+import gc
 
 class YOLO(DetectionModel):
     """
@@ -20,6 +21,15 @@ class YOLO(DetectionModel):
         """Load YOLO model."""
         self.model = UltralyticsYOLO(self.model_path)
         self.model.to(self.device)
+
+    def unload_model(self):
+        """Unload YOLO model to free up memory."""
+        if hasattr(self, 'model'):
+            if self.model is not None and next(self.model.parameters()).is_cuda:
+                del self.model
+            self.model = None
+        # Force garbage collection just for the deleted objects
+        gc.collect()
 
     def preprocess(self, image: np.ndarray) -> torch.Tensor:
         """YOLO handles preprocessing internally."""
