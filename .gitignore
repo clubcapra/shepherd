@@ -163,3 +163,4 @@ cython_debug/
 
 /model_weights
 Replica-Dataset
+.hf_token
