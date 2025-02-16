@@ -10,6 +10,7 @@ from transformers import BlipForConditionalGeneration, BlipProcessor
 
 from ..captioning_model import CaptioningModel
 
+import gc
 
 class BLIP(CaptioningModel):
     """
@@ -23,6 +24,18 @@ class BLIP(CaptioningModel):
         self.model = BlipForConditionalGeneration.from_pretrained(model_name)
         self.model.to(self.device)
         self.model.eval()
+
+    def unload_model(self):
+        """Unload BLIP model and processor to free up memory."""
+        if hasattr(self, 'model'):
+            # Delete model from CUDA memory specifically
+            if self.model is not None and next(self.model.parameters()).is_cuda:
+                del self.model
+            self.model = None
+        if hasattr(self, 'processor'):
+            self.processor = None
+        # Force garbage collection just for the deleted objects
+        gc.collect()
 
     def preprocess(self, image: np.ndarray) -> torch.Tensor:
         """Preprocess image for BLIP."""

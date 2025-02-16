@@ -10,6 +10,7 @@ from PIL import Image
 
 from ..embedding_model import EmbeddingModel
 
+import gc
 
 class CLIP(EmbeddingModel):
     """
@@ -19,6 +20,18 @@ class CLIP(EmbeddingModel):
     def load_model(self):
         """Load CLIP model."""
         self.model, self.preprocess_fn = clip.load("ViT-B/32", device=self.device)
+
+    def unload_model(self):
+        """Unload CLIP model to free up memory."""
+        if hasattr(self, 'model'):
+            # Delete model from CUDA memory specifically
+            if self.model is not None and next(self.model.parameters()).is_cuda:
+                del self.model
+            self.model = None
+        if hasattr(self, 'preprocess_fn'):
+            self.preprocess_fn = None
+        # Force garbage collection just for the deleted objects
+        gc.collect()
 
     def preprocess(self, image: np.ndarray) -> torch.Tensor:
         """Preprocess image for CLIP."""

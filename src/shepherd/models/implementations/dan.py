@@ -10,6 +10,7 @@ from transformers import pipeline
 
 from ..depth_model import DepthModel
 
+import gc
 
 class DAN(DepthModel):
     """
@@ -23,6 +24,17 @@ class DAN(DepthModel):
             model="depth-anything/Depth-Anything-V2-Small-hf",
             device=self.device,
         )
+
+    def unload_model(self):
+        """Unload Depth Anything model to free up memory."""
+        if hasattr(self, 'model'):
+            # Since model is a pipeline, check if model exists and has a model attribute
+            if self.model is not None and hasattr(self.model, 'model'):
+                if next(self.model.model.parameters()).is_cuda:
+                    del self.model.model
+            self.model = None
+        # Force garbage collection just for the deleted objects
+        gc.collect()
 
     def preprocess(self, image: np.ndarray) -> Image.Image:
         """Preprocess image for depth estimation."""

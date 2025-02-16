@@ -30,6 +30,10 @@ class BaseModel(ABC):
     @abstractmethod
     def load_model(self):
         """Load model from path."""
+    
+    @abstractmethod
+    def unload_model(self):
+        """Unload model from GPU."""
 
     @abstractmethod
     def preprocess(self, image: np.ndarray) -> torch.Tensor:
