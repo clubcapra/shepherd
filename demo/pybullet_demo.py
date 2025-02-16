@@ -268,7 +268,6 @@ class PyBulletShepherd:
                 
                 # Step simulation
                 p.stepSimulation()
-                time.sleep(0.01)
                 
         finally:
             cv2.destroyAllWindows()
