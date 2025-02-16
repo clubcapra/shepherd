@@ -164,3 +164,5 @@ cython_debug/
 /model_weights
 Replica-Dataset
 .hf_token
+/demo/habitat_output
+/demo/pybullet_output
