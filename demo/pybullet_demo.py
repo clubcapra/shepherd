@@ -256,7 +256,8 @@ class PyBulletShepherd:
                 elif key == ord('e'):
                     self.camera_yaw += self.turn_speed
                 elif key == ord('r'):
-                    # reason
+                    question = input("\nEnter question: ")
+                    self.shepherd.reason(rgb, question)
                     pass
                 elif key == ord('k'):
                     query = input("\nEnter query: ")

@@ -277,3 +277,6 @@ class Shepherd:
             points = points[valid_points]
 
         return points
+    
+    def reason(self, image, question):
+        print(self.reasoner.reason(image, question))
