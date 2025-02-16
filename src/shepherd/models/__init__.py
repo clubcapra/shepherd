@@ -8,6 +8,7 @@ from .depth_model import DepthModel
 from .detection_model import DetectionModel
 from .embedding_model import EmbeddingModel
 from .segmentation_model import SegmentationModel
+from .reasoning_model import ReasoningModel
 
 __all__ = [
     "BaseModel",
@@ -16,4 +17,5 @@ __all__ = [
     "CaptioningModel",
     "DepthModel",
     "EmbeddingModel",
+    "ReasoningModel"
 ]
