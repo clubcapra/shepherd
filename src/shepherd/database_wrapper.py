@@ -700,6 +700,24 @@ class DatabaseWrapper:
 
         caption_future.add_done_callback(_update_caption)
 
+    def update_caption(self, object_id: str, caption: str):
+        """Update caption for an object."""
+        try:
+            # Get existing metadata
+            results = self.collection.get(ids=[object_id], include=["metadatas"])
+            metadata = results["metadatas"][0]
+
+            # Update caption
+            metadata["caption"] = caption
+
+            # Update in database
+            self.collection.update(
+                ids=[object_id],
+                metadatas=[metadata],
+            )
+        except Exception as e:
+            print(f"Error updating caption for object {object_id}: {e}")
+
     def get_object_metadata(self, object_id: str) -> Dict:
         """Get metadata for a specific object."""
         try:
