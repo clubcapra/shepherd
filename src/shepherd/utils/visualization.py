@@ -157,6 +157,73 @@ class VisualizationUtils:
         plt.show()
 
     @staticmethod
+    def show_detections_and_masks(
+        image: np.ndarray,
+        detections: List[Dict],
+        masks: List[np.ndarray],
+        show_labels: bool = True,
+        show_conf: bool = True,
+    ):
+        """Display image with YOLO detections."""
+        viz = image.copy()
+        id = 0
+        for det in detections:
+            mask = masks[id]
+            bbox = det["bbox"]
+            conf = det.get("confidence", 0)
+            class_id = int(det.get("class_id", 0))
+            class_name = VisualizationUtils.YOLO_CLASSES.get(
+                class_id, f"Class {class_id}"
+            )
+
+            x_1, y_1, x_2, y_2 = map(int, bbox)
+            cv2.rectangle(viz, (x_1, y_1), (x_2, y_2), (0, 255, 0), 2)
+
+            if show_labels or show_conf:
+                label = []
+                if show_labels:
+                    label.append(class_name)
+                if show_conf:
+                    label.append(f"{conf:.2f}")
+
+                label_text = " | ".join(label)
+                cv2.putText(
+                    viz,
+                    str(id) + ": " + label_text,
+                    (x_1, y_1 - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (0, 255, 0),
+                    2,
+                )
+            
+            for i in range(len(mask)):
+                for j in range(len(mask[i])):
+                    if mask[i][j] == 1:
+                        viz[i][j][2] = min(viz[i][j][2] + 100, 255)
+
+            maskxy = np.where(mask == 1)
+            x1 = min(maskxy[1])
+            y1 = min(maskxy[0])
+            cv2.putText(
+                viz,
+                "Mask " + str(id),
+                (x1, y1 - 30),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 255, 0),
+                2,
+            )
+            id += 1
+
+        plt.figure(figsize=(10, 10))
+        plt.imshow(cv2.cvtColor(viz, cv2.COLOR_BGR2RGBA))
+        plt.title("YOLO Detections")
+        plt.axis("off")
+        plt.show()
+
+
+    @staticmethod
     def show_masks(image: np.ndarray, masks: List[np.ndarray], alpha: float = 0.5):
         """Display image with segmentation masks."""
         viz = image.copy()
