@@ -4,13 +4,14 @@ CLIP model implementation.
 
 import clip
 import cv2
+import gc
 import numpy as np
 import torch
 from PIL import Image
 
 from ..embedding_model import EmbeddingModel
+from shepherd.utils.wrapper import timer
 
-import gc
 
 class CLIP(EmbeddingModel):
     """

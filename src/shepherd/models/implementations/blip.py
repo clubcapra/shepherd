@@ -3,14 +3,15 @@ BLIP model implementation.
 """
 
 import cv2
+import gc
 import numpy as np
 import torch
 from PIL import Image
 from transformers import BlipForConditionalGeneration, BlipProcessor
 
 from ..captioning_model import CaptioningModel
+from shepherd.utils.wrapper import timer
 
-import gc
 
 class BLIP(CaptioningModel):
     """
