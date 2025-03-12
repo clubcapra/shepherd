@@ -79,6 +79,43 @@ class Shepherd:
         if self.config.default_query:
             self.update_query(self.config.default_query)
 
+        self.frame_queue = Queue(10)
+        self.results_queue = Queue(10)
+        self.last_result = None
+        self.executor = ThreadPoolExecutor(max_workers=4)
+        self.max_concurrent_runs = 4
+
+    async def run(self):
+        while True:
+            concurrent_runs = min(self.max_concurrent_runs, self.frame_queue.qsize())
+            if concurrent_runs == 0:
+                await asyncio.sleep(1.0)
+                continue
+            tasks = []
+            results = []
+            for i in range(concurrent_runs):
+                frame_id, rgb, depth, camera_pose = await self.frame_queue.get()
+                task = asyncio.create_task(self.process_frame(frame_id, rgb, depth, camera_pose))
+                tasks.append(task)
+            while tasks:
+                done, tasks = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    result = task.result()
+                    await self.results_queue.put(result)
+
+    async def add_to_frame_queue(self, frame_id, rgb, depth, camera_pose):
+        if self.frame_queue.full():
+            await self.frame_queue.get()
+        await self.frame_queue.put([frame_id, rgb, depth, camera_pose])
+
+    async def get_from_results_queue(self):
+        if self.results_queue.empty():
+            await asyncio.sleep(0.1)
+            return self.last_result
+        result = await self.results_queue.get()
+        self.last_result = result
+        return result
+
     def update_query(self, query_text: str):
         """Update the query and compute its embedding."""
         self.config.default_query = query_text
@@ -213,8 +250,9 @@ class Shepherd:
         results = [r for r in results if r is not None]
         return results
 
-    def process_frame(
+    async def process_frame(
         self,
+        frame_id: int,
         frame: np.ndarray,
         depth_frame: Optional[np.ndarray] = None,
         camera_pose: Optional[Dict] = None,):
@@ -242,7 +280,7 @@ class Shepherd:
         # Only process if we have valid point cloud data
 
         results = self._step_add_to_db(obj, camera_pose, depth_frame)
-        return results
+        return frame_id, frame, results
 
     def _validate_models(self):
         """Validate that all required models are properly initialized."""
