@@ -1,7 +1,9 @@
 import os
 import time
+import sys
+sys.path.insert(0, 'C:/Users/gab/shepherd')
+    
 from typing import Dict, Tuple
-
 import cv2
 import numpy as np
 import pybullet as p

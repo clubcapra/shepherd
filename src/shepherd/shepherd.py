@@ -27,6 +27,7 @@ class Shepherd:
             config (ShepherdConfig): Configuration containing model paths and parameters
             database (DatabaseWrapper): Database wrapper instance for storing object data
         """
+        
         if config is None:
             config = ShepherdConfig()
 
@@ -37,6 +38,7 @@ class Shepherd:
         self.device = config.get(
             "device", "cuda" if torch.cuda.is_available() else "cpu"
         )
+        print(self.device)
         self.database = database
 
         # Initialize models

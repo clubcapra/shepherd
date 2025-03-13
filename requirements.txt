@@ -14,7 +14,7 @@ charset-normalizer==3.4.1
 chroma-hnswlib==0.7.6
 chromadb==0.5.18
 click==8.1.8
-clip==1.0
+openai-clip
 coloredlogs==15.0.1
 comm==0.2.2
 ConfigArgParse==1.7

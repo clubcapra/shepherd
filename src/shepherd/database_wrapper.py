@@ -167,10 +167,8 @@ class DatabaseWrapper:
             print(f"Error in geometric similarity computation: {e}")
             return 0.0
 
-    def _find_nearby_object(
-        self, point_cloud: np.ndarray, embedding: np.ndarray
-    ) -> Optional[str]:
-        """Find nearby object using combined geometric and semantic similarity."""
+    def _find_nearby_object(self, point_cloud: np.ndarray, embedding: np.ndarray) -> Optional[str]:
+        """Find nearby object using combined geometric and semantic similarity (optimized)."""
         if len(self.point_clouds) == 0 or point_cloud is None or len(point_cloud) == 0:
             return None
 
@@ -178,41 +176,53 @@ class DatabaseWrapper:
             best_match = None
             best_similarity = -float("inf")
 
-            # Get embeddings from database
-            # TODO: Déterminer si il y a une perte de performance à laisser la BD nous 
-            # donner le vecteur le plus près au lieu de faire une boucle sur tous les vecteurs.
-            # Il est possible de configurer la BD pour utiliser cosine sim. comme métrique et lui demander
-            # de renvoyer top k résultats
-            results = self.collection.get(include=["embeddings"])
+            # 1. ChromaDB Filtering:
+            results = self.collection.query(
+                query_embeddings=[embedding.tolist()], 
+                n_results=5, 
+                include=["embeddings"]  
+            )
 
-            # Check each existing object
-            for obj_id, stored_cloud in self.point_clouds.items():
-                if len(stored_cloud) == 0:
+            if not results or not results["embeddings"]: 
+                return None
+            
+            ids = results["ids"][0] 
+            embeddings_2d = results["embeddings"][0]
+
+            # 2. Radius-based NN for Geometric Similarity
+            nn_geo = NearestNeighbors(radius=self.distance_threshold, algorithm="ball_tree") 
+            nn_geo.fit(point_cloud)
+
+            for i in range(len(ids)):
+                obj_id = ids[i]
+                stored_embedding = embeddings_2d[i]
+                stored_cloud = self.point_clouds.get(obj_id)
+
+                if stored_cloud is None or len(stored_cloud) == 0:
                     continue
 
-                # Get stored embedding
-                stored_embedding = results["embeddings"][
-                    list(self.point_clouds.keys()).index(obj_id)
-                ]
+                # 3. Geometric Similarity (using radius search)
+                geo_sim_sum = 0
+                for point in stored_cloud:
+                    indices = nn_geo.radius_neighbors(point.reshape(1, -1), return_distance=False)[0]
+                    nearby_points = point_cloud[indices]
 
-                # Compute geometric similarity
-                geo_sim = self._compute_geometric_similarity(point_cloud, stored_cloud)
+                    if len(nearby_points) > 0:
+                        geo_sim_sum += 1 
 
-                # Only compute semantic similarity if there's geometric overlap
+                geo_sim = geo_sim_sum / len(stored_cloud) if len(stored_cloud) > 0 else 0
+
                 if geo_sim > 0.1:
-                    # Compute semantic similarity
-                    sem_sim = self._compute_semantic_similarity(
-                        embedding, np.array(stored_embedding)
-                    )
+                    # 4. Semantic Similarity
+                    #sem_sim = self._compute_semantic_similarity(embedding, np.array(stored_embedding))
 
-                    # Combined similarity score
-                    total_sim = geo_sim + sem_sim
-
+                    # 5. Combined Similarity
+                    total_sim = geo_sim 
+                    
                     if total_sim > best_similarity:
                         best_similarity = total_sim
                         best_match = obj_id
 
-            # Return match only if similarity is above threshold
             if best_similarity > self.similarity_threshold:
                 return best_match
 
