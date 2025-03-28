@@ -1,3 +1,4 @@
+import asyncio
 import os
 import time
 from typing import Dict, Tuple
@@ -6,10 +7,12 @@ import cv2
 import numpy as np
 import pybullet as p
 import pybullet_data
+
+from asyncio.queues import QueueEmpty
 from scipy.spatial.transform import Rotation
 
-from src.shepherd import Shepherd, ShepherdConfig
-from src.shepherd.utils.camera import CameraUtils
+from shepherd import Shepherd, ShepherdConfig
+from shepherd.utils.camera import CameraUtils
 
 
 class PyBulletShepherd:
@@ -172,7 +175,7 @@ class PyBulletShepherd:
         self.shepherd.database.save_point_cloud_ply(output_path)
         print(f"Saved point cloud to: {output_path}")
 
-    def run(self):
+    async def run(self):
         """Main run loop."""
         print("\nControls:")
         print("W/S - Move forward/backward")
@@ -185,19 +188,26 @@ class PyBulletShepherd:
         
         try:
             while True:
+                # print(self.shepherd.results_queue.qsize(), self.shepherd.frame_queue.qsize())
                 # Get camera view
                 rgb, depth, camera_pose = self.get_camera_view()
+                self.frame_count += 1
+                await self.shepherd.add_to_frame_queue(self.frame_count, rgb, depth, camera_pose)
                 
                 # Process frame with Shepherd
-                self.frame_count += 1
-                if self.frame_count % self.frame_skip == 0:
-                    print(camera_pose)
-                    
 
-                    results = self.shepherd.process_frame(rgb, depth, camera_pose)
-                    
-                    # Create visualization
-                    viz_frame = rgb.copy()
+                if self.frame_count % self.frame_skip == 0:
+                    # print(camera_pose)
+
+                    # await self.shepherd.get_from_results_queue()
+                    results_obj = await self.shepherd.get_latest_results()
+                    if results_obj is None:
+                        continue
+                    else:
+                        frame_id, frame, results = results_obj
+
+                # Create visualization
+                    viz_frame = frame.copy()
                     
                     # Draw detections and masks
                     for result in results:
@@ -226,17 +236,20 @@ class PyBulletShepherd:
                         if similarity is not None:
                             text += f" ({similarity:.2f})"
                         cv2.putText(viz_frame, text, (x1, y1 - 10),
-                                  cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
                     
                     # Add query information
                     query_text = f"Query: {self.shepherd.config.default_query}"
                     cv2.putText(viz_frame, query_text, (10, 30),
-                              cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                    cv2.putText(viz_frame, str(frame_id)+"/"+str(self.frame_count), (10, 60),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
                     
                     # Show frame
                     cv2.imshow("Shepherd View", viz_frame)
-                
-                # Handle keyboard input
+
+                        
+                    # Handle keyboard input
                 key = cv2.waitKey(1) & 0xFF
                 
                 if key == ord('w'):
@@ -275,9 +288,12 @@ class PyBulletShepherd:
             cv2.destroyAllWindows()
             p.disconnect()
 
-def main():
-    shepherd = PyBulletShepherd()
-    shepherd.run()
+async def main():
+    pybulletshepherd = PyBulletShepherd()
+    loop = asyncio.get_event_loop()
+    t1 = loop.create_task(pybulletshepherd.run())
+    t2 = loop.create_task(pybulletshepherd.shepherd.run())
+    await asyncio.gather(t1, t2)
 
 if __name__ == "__main__":
-    main() 
+    asyncio.run(main())

@@ -2,9 +2,11 @@
 Shepherd class.
 """
 
+from asyncio.queues import Queue
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional
 
+import asyncio 
 import cv2
 import numpy as np
 import torch
@@ -12,6 +14,8 @@ import torch
 from .database_wrapper import DatabaseWrapper
 from .models.implementations import BLIP, CLIP, DAN, SAM, YOLO
 from .shepherd_config import ShepherdConfig
+from .utils.visualization import VisualizationUtils as vu
+from .utils.wrapper import timer
 
 
 class Shepherd:
@@ -79,10 +83,11 @@ class Shepherd:
         if self.config.default_query:
             self.update_query(self.config.default_query)
 
-        self.frame_queue = Queue(10)
-        self.results_queue = Queue(10)
+        self.frame_queue = Queue(40)
+        self.results_queue = Queue(16)
         self.last_result = None
-        self.executor = ThreadPoolExecutor(max_workers=4)
+        self.latest_frame_id = 0
+        self.latest_results = None
         self.max_concurrent_runs = 4
 
     async def run(self):
@@ -101,6 +106,9 @@ class Shepherd:
                 done, tasks = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
                 for task in done:
                     result = task.result()
+                    if result[0] > self.latest_frame_id:
+                        self.latest_frame_id = result[0]
+                        self.latest_results = result
                     await self.results_queue.put(result)
 
     async def add_to_frame_queue(self, frame_id, rgb, depth, camera_pose):
@@ -110,11 +118,18 @@ class Shepherd:
 
     async def get_from_results_queue(self):
         if self.results_queue.empty():
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(1/4)
             return self.last_result
         result = await self.results_queue.get()
         self.last_result = result
         return result
+
+    async def get_latest_results(self):
+        if self.latest_results is None:
+            await self.get_from_results_queue()
+        return_result = self.latest_results
+        self.latest_results = None
+        return return_result
 
     def update_query(self, query_text: str):
         """Update the query and compute its embedding."""
@@ -143,7 +158,8 @@ class Shepherd:
         # frame_tensor = torch.from_numpy(frame).to(self.device)
         """Process a single frame through the vision pipeline."""
         # Run detection
-        detections = self._process_detections(frame)
+        with torch.cuda.stream(stream1):
+            detections = self._process_detections(frame)
 
         # If no depth frame provided, estimate it using DAN
         with torch.cuda.stream(stream2):
@@ -200,52 +216,55 @@ class Shepherd:
 
     def _step_add_to_db(self, obj, camera_pose, depth_frame):
         results = [None] * len(obj["detections"])
-        for i in range(len(obj["detections"])):
-            detection = obj["detections"][i]
-            mask = obj["masks"][i]
-            embedding = obj["embeddings"][i]
-            bbox_region = obj["bbox_regions"][i]
-            point_cloud = obj["point_clouds"][i]
-        
-            if point_cloud is not None:
-                # Create metadata
-                metadata = {
-                    "class_id": detection.get("class_id", 0),
-                    "confidence": detection["confidence"],
-                }
-        
-                # Store in database and get object ID
-                object_id, needs_caption = self.database.store_object(
-                    embedding=embedding,
-                    metadata=metadata,
-                    point_cloud=point_cloud,
-                    camera_pose=camera_pose,
-                )
-        
-                if object_id is not None:
-                    # Submit captioning task if needed
-        
-                    if needs_caption and self.config.use_caption:
-                        caption = self._process_captions(bbox_region)
-                        self.database.update_caption(object_id, caption)
-        
-                    # Get object metadata including caption
-                    obj_metadata = self.database.get_object_metadata(object_id)
-                    caption = obj_metadata.get("caption", "Processing caption...")
-                    print(f"Object {object_id}: {caption}")
-        
-                    # Get similarity from metadata if it exists
-                    similarity = metadata.get("query_similarity")
-        
-                    results[i] ={
-                            "detection": detection,
-                            "mask": mask,
-                            "embedding": embedding,
-                            "depth_frame": depth_frame,
-                            "object_id": object_id,
-                            "similarity": similarity,
-                            "caption": caption,
-                        }
+        with ThreadPoolExecutor(4) as executor:
+            for i in range(len(obj["detections"])):
+                detection = obj["detections"][i]
+                mask = obj["masks"][i]
+                embedding = obj["embeddings"][i]
+                bbox_region = obj["bbox_regions"][i]
+                point_cloud = obj["point_clouds"][i]
+            
+                if point_cloud is not None:
+                    # Create metadata
+                    metadata = {
+                        "class_id": detection.get("class_id", 0),
+                        "confidence": detection["confidence"],
+                    }
+            
+                    # Store in database and get object ID
+                    object_id, needs_caption = self.database.store_object(
+                        embedding=embedding,
+                        metadata=metadata,
+                        point_cloud=point_cloud,
+                        camera_pose=camera_pose,
+                    )
+            
+                    if object_id is not None:
+                        # Submit captioning task if needed
+            
+                        if needs_caption and self.config.use_caption:
+                            future = executor.submit(
+                                self._process_captions, bbox_region
+                            )
+                            self.database.update_caption_async(object_id, future)
+            
+                        # Get object metadata including caption
+                        obj_metadata = self.database.get_object_metadata(object_id)
+                        caption = obj_metadata.get("caption", "Processing caption...")
+                        print(f"Object {object_id}: {caption}")
+            
+                        # Get similarity from metadata if it exists
+                        similarity = metadata.get("query_similarity")
+            
+                        results[i] ={
+                                "detection": detection,
+                                "mask": mask,
+                                "embedding": embedding,
+                                "depth_frame": depth_frame,
+                                "object_id": object_id,
+                                "similarity": similarity,
+                                "caption": caption,
+                            }
         
         results = [r for r in results if r is not None]
         return results
@@ -257,6 +276,7 @@ class Shepherd:
         depth_frame: Optional[np.ndarray] = None,
         camera_pose: Optional[Dict] = None,):
 
+        # detections, depth_frame = await asyncio.to_thread(self._step_detection_dan, frame, depth_frame)
         detections, depth_frame = self._step_detection_dan(frame, depth_frame)
         
         obj = {
@@ -273,8 +293,7 @@ class Shepherd:
 
 
         # Get depth information and create point clouds
-        point_clouds = self._step_point_clouds(masks, depth_frame)
-
+        point_clouds = await asyncio.to_thread(self._step_point_clouds, masks, depth_frame)
         obj["point_clouds"] = point_clouds
 
         # Only process if we have valid point cloud data
@@ -366,6 +385,7 @@ class Shepherd:
 
         # Stack coordinates
         points = np.stack([x_coords, y_coords, z_coords], axis=1)
+        torch._numpy.array(points)
 
         # Remove outliers
         if len(points) > 0:
