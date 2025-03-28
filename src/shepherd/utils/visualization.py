@@ -120,7 +120,7 @@ class VisualizationUtils:
     ):
         """Display image with YOLO detections."""
         viz = image.copy()
-
+        id = 0
         for det in detections:
             bbox = det["bbox"]
             conf = det.get("confidence", 0)
@@ -142,13 +142,14 @@ class VisualizationUtils:
                 label_text = " | ".join(label)
                 cv2.putText(
                     viz,
-                    label_text,
+                    str(id) + ": " + label_text,
                     (x_1, y_1 - 10),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.5,
                     (0, 255, 0),
                     2,
                 )
+            id += 1
 
         plt.figure(figsize=(10, 10))
         plt.imshow(cv2.cvtColor(viz, cv2.COLOR_BGR2RGB))
