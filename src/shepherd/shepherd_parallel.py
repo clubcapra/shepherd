@@ -89,27 +89,67 @@ class Shepherd:
         self.latest_frame_id = 0
         self.latest_results = None
         self.max_concurrent_runs = 4
+        self.yolo_dan_batch_size = 16
+
 
     async def run(self):
-        while True:
-            concurrent_runs = min(self.max_concurrent_runs, self.frame_queue.qsize())
-            if concurrent_runs == 0:
-                await asyncio.sleep(1.0)
-                continue
-            tasks = []
-            results = []
-            for i in range(concurrent_runs):
-                frame_id, rgb, depth, camera_pose = await self.frame_queue.get()
-                task = asyncio.create_task(self.process_frame(frame_id, rgb, depth, camera_pose))
-                tasks.append(task)
+        async def complete_pending_tasks(tasks, return_when=asyncio.FIRST_COMPLETED):
             while tasks:
-                done, tasks = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                done, tasks = await asyncio.wait(tasks, return_when=return_when)
                 for task in done:
                     result = task.result()
                     if result[0] > self.latest_frame_id:
                         self.latest_frame_id = result[0]
                         self.latest_results = result
                     await self.results_queue.put(result)
+
+        while True:
+            tasks = []
+            results = []
+            queue_size = self.frame_queue.qsize()
+            concurrent_runs = min(self.max_concurrent_runs, queue_size)
+
+            if concurrent_runs == 0:
+                await asyncio.sleep(1.0)
+                continue
+
+            # if we have enough frames, run detection and depth estimation in batch
+            if queue_size >= self.yolo_dan_batch_size:
+                yolo_dan_batch_frames = []
+                yolo_dan_batch_depths = []
+                inputs = []
+                for i in range(self.yolo_dan_batch_size):
+                    if self.frame_queue.empty():
+                        break
+                    frame_id, rgb, depth, camera_pose = await self.frame_queue.get()
+                    inputs.append((frame_id, rgb, depth, camera_pose))
+                    yolo_dan_batch_frames.append(rgb)
+                    yolo_dan_batch_depths.append(depth)
+
+                # Run detection and depth estimation in parallel
+                detections, depth_frames = await asyncio.to_thread(
+                    self._step_detection_dan, yolo_dan_batch_frames, yolo_dan_batch_depths
+                )
+                i = 0
+                while i < len(inputs):
+                    for j in range(concurrent_runs):
+                        if i >= len(inputs):
+                            break
+                        frame_id, rgb, depth, camera_pose = inputs[i]
+                        i += 1
+                        task = asyncio.create_task(
+                            self.process_objects(
+                                detections[j], depth_frames[j], rgb, camera_pose, frame_id
+                            )
+                        )
+                        tasks.append(task)
+                    await complete_pending_tasks(tasks)
+            else:
+                for i in range(concurrent_runs):
+                    frame_id, rgb, depth, camera_pose = await self.frame_queue.get()
+                    task = asyncio.create_task(self.process_frame(frame_id, rgb, depth, camera_pose))
+                    tasks.append(task)
+                await complete_pending_tasks(tasks)
 
     async def add_to_frame_queue(self, frame_id, rgb, depth, camera_pose):
         if self.frame_queue.full():
@@ -269,6 +309,29 @@ class Shepherd:
         results = [r for r in results if r is not None]
         return results
 
+    async def process_objects(self, detections, depth_frame, frame, camera_pose, frame_id):
+        obj = {
+            "detections": detections,
+            "depth_frame": depth_frame,
+        }
+        
+        # Get segmentation masks and embeddings
+        masks, embeddings, bbox_regions = self._step_sam_clip(frame, detections)
+        
+        obj["masks"] = masks
+        obj["embeddings"] = embeddings
+        obj["bbox_regions"] = bbox_regions
+        
+        
+        # Get depth information and create point clouds
+        point_clouds = await asyncio.to_thread(self._step_point_clouds, masks, depth_frame)
+        obj["point_clouds"] = point_clouds
+        
+        # Only process if we have valid point cloud data
+        
+        results = self._step_add_to_db(obj, camera_pose, depth_frame)
+        return frame_id, frame, results
+
     async def process_frame(
         self,
         frame_id: int,
@@ -279,27 +342,7 @@ class Shepherd:
         # detections, depth_frame = await asyncio.to_thread(self._step_detection_dan, frame, depth_frame)
         detections, depth_frame = self._step_detection_dan(frame, depth_frame)
         
-        obj = {
-            "detections": detections,
-            "depth_frame": depth_frame,
-        }
-
-        # Get segmentation masks and embeddings
-        masks, embeddings, bbox_regions = self._step_sam_clip(frame, detections)
-
-        obj["masks"] = masks
-        obj["embeddings"] = embeddings
-        obj["bbox_regions"] = bbox_regions
-
-
-        # Get depth information and create point clouds
-        point_clouds = await asyncio.to_thread(self._step_point_clouds, masks, depth_frame)
-        obj["point_clouds"] = point_clouds
-
-        # Only process if we have valid point cloud data
-
-        results = self._step_add_to_db(obj, camera_pose, depth_frame)
-        return frame_id, frame, results
+        return await self.process_objects(detections, depth_frame, frame, camera_pose, frame_id)
 
     def _validate_models(self):
         """Validate that all required models are properly initialized."""
