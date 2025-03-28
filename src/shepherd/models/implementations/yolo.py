@@ -40,6 +40,8 @@ class YOLO(DetectionModel):
         results = self.model(
             image, conf=self.confidence_threshold, iou=self.nms_threshold
         )
+        if len(results) > 1:
+            return [self.postprocess(result) for result in results]
         return self.postprocess(results)
 
     def postprocess(self, output: Any) -> List[Dict]:
