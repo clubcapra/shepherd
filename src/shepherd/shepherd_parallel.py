@@ -17,7 +17,58 @@ from .shepherd_config import ShepherdConfig
 from .utils.visualization import VisualizationUtils as vu
 from .utils.wrapper import timer
 
+class ResultsCollections:
+    """
+    Results collection class for storing and managing results.
+    """
+    def __init__(self, max_size=40):
+        self.results = {}
+        self.last_consumed = None
+        self.latest_frame_id = 0
+        self.latest_result_id = 0
+        self.max_size = max_size
+    
+    def __getitem__(self, frame_id):
+        if frame_id in self.results:
+            result = self.results[frame_id]
+            self.last_consumed = result
+            self.latest_frame_id = frame_id
+            return result
+        else:
 
+            return self.last_consumed
+
+    def __setitem__(self, frame_id, result):
+        if str(frame_id) in self.results:
+            del self.results[str(frame_id)]
+
+        self.results[str(frame_id)] = result
+        return result
+
+    def add_frame(self, frame_id, rgb, depth, camera_pose):
+        self.results[frame_id] = [rgb, depth, camera_pose]
+        if len(self.results) >= self.max_size:
+            # get the oldest frame
+            oldest_frame_id = min(self.results.keys(), key=int)
+            del self.results[oldest_frame_id]
+        self.latest_frame_id = frame_id
+        return self.results[frame_id]
+
+    def pop(self, frame_id):
+        if str(frame_id) in self.results:
+            result = self.results[str(frame_id)]
+            del self.results[str(frame_id)]
+            return result
+        else:
+            return None
+
+    def update(self, frame_id: int, result: List):
+        if frame_id in self.results:
+            self.results[frame_id] = result
+            self.latest_result_id = frame_id
+            return result
+        else:
+            return None
 class Shepherd:
     """
     Shepherd class that handles the whole vision pipeline.
@@ -84,24 +135,36 @@ class Shepherd:
             self.update_query(self.config.default_query)
 
         self.frame_queue = Queue(40)
-        self.results_queue = Queue(16)
-        self.last_result = None
-        self.latest_frame_id = 0
-        self.latest_results = None
+        self.results = ResultsCollections()
         self.max_concurrent_runs = 4
         self.yolo_dan_batch_size = 16
+        self.frame_delay = 4
 
+    async def _complete_pending_tasks(self, tasks: set, return_when=asyncio.FIRST_COMPLETED) -> set:
+        """Helper to wait for tasks, process results, and return remaining tasks."""
+        if not tasks:
+            return tasks
+
+        done, pending = await asyncio.wait(tasks, return_when=return_when, timeout=0.1) # Add timeout
+
+        for task in done:
+            try:
+                result = task.result()
+                # Expected format: (frame_id, frame, processed_results_list)
+                if result is not None and isinstance(result, tuple) and len(result) == 3:
+                    frame_id, frame, results_list = result
+                    # Update ResultsCollections with the processed data
+                    self.results.update(frame_id, [frame, results_list])
+                # else: # Result might be None if processing failed internally
+                    # logger.debug(f"Task for frame {result[0] if result else 'unknown'} completed with None or unexpected result.")
+            except asyncio.CancelledError:
+                 logger.info("A processing task was cancelled.")
+            except Exception:
+                logger.exception("Error retrieving result from completed task.")
+        return pending
 
     async def run(self):
-        async def complete_pending_tasks(tasks, return_when=asyncio.FIRST_COMPLETED):
-            while tasks:
-                done, tasks = await asyncio.wait(tasks, return_when=return_when)
-                for task in done:
-                    result = task.result()
-                    if result[0] > self.latest_frame_id:
-                        self.latest_frame_id = result[0]
-                        self.latest_results = result
-                    await self.results_queue.put(result)
+                        
 
         while True:
             tasks = []
@@ -143,33 +206,37 @@ class Shepherd:
                             )
                         )
                         tasks.append(task)
-                    await complete_pending_tasks(tasks)
+                    await self._complete_pending_tasks(tasks)
             else:
                 for i in range(concurrent_runs):
                     frame_id, rgb, depth, camera_pose = await self.frame_queue.get()
                     task = asyncio.create_task(self.process_frame(frame_id, rgb, depth, camera_pose))
                     tasks.append(task)
-                await complete_pending_tasks(tasks)
+                await self._complete_pending_tasks(tasks)
 
     async def add_to_frame_queue(self, frame_id, rgb, depth, camera_pose):
         if self.frame_queue.full():
-            await self.frame_queue.get()
+            dispose_frame = await self.frame_queue.get()
+            # self.results.pop(str(dispose_frame[0]), None)
+        self.results.add_frame(frame_id, rgb, depth, camera_pose)
         await self.frame_queue.put([frame_id, rgb, depth, camera_pose])
 
-    async def get_from_results_queue(self):
-        if self.results_queue.empty():
-            await asyncio.sleep(1/4)
-            return self.last_result
-        result = await self.results_queue.get()
-        self.last_result = result
-        return result
 
-    async def get_latest_results(self):
-        if self.latest_results is None:
-            await self.get_from_results_queue()
-        return_result = self.latest_results
-        self.latest_results = None
-        return return_result
+
+    async def get_latest_results(self, frame_id):
+        await asyncio.sleep(1/8)
+        if self.results.latest_result_id + self.frame_delay >= frame_id:
+            if self.results[self.results.latest_result_id] is not None:
+                return self.results.latest_result_id, self.results[self.results.latest_result_id]
+        else:
+            for i in range(self.frame_delay, 0, -1):
+                if frame_id - i < 0:
+                    continue
+                if self.results[frame_id - i] is not None:
+                    result = self.results[frame_id - i]
+                    return frame_id-i, result
+        return None
+        
 
     def update_query(self, query_text: str):
         """Update the query and compute its embedding."""
@@ -311,6 +378,7 @@ class Shepherd:
 
     async def process_objects(self, detections, depth_frame, frame, camera_pose, frame_id):
         obj = {
+            "frame": frame,
             "detections": detections,
             "depth_frame": depth_frame,
         }
@@ -330,6 +398,7 @@ class Shepherd:
         # Only process if we have valid point cloud data
         
         results = self._step_add_to_db(obj, camera_pose, depth_frame)
+        self.results.update(frame_id, [frame, results])
         return frame_id, frame, results
 
     async def process_frame(

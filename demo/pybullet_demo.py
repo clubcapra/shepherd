@@ -200,16 +200,22 @@ class PyBulletShepherd:
                     # print(camera_pose)
 
                     # await self.shepherd.get_from_results_queue()
-                    results_obj = await self.shepherd.get_latest_results()
+                    frame_id, results_obj = await self.shepherd.get_latest_results(self.frame_count)
+                    results = []
                     if results_obj is None:
                         continue
                     else:
-                        frame_id, frame, results = results_obj
+                        if len(results_obj) == 3:
+                            frame, depth, _ = results_obj
+                        elif len(results_obj) == 2:
+                            frame, results = results_obj
+
 
                 # Create visualization
                     viz_frame = frame.copy()
                     
                     # Draw detections and masks
+                    
                     for result in results:
                         bbox = result["detection"]["bbox"]
                         mask = result["mask"]
