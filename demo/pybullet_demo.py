@@ -13,6 +13,7 @@ from scipy.spatial.transform import Rotation
 
 from shepherd import Shepherd, ShepherdConfig
 from shepherd.utils.camera import CameraUtils
+from shepherd.data_structure import ResultsType
 
 
 class PyBulletShepherd:
@@ -175,7 +176,22 @@ class PyBulletShepherd:
         self.shepherd.database.save_point_cloud_ply(output_path)
         print(f"Saved point cloud to: {output_path}")
 
-    async def run(self):
+
+    async def run_sim(self):
+        """Run the simulation."""
+        while True:
+            # Get camera view
+            await asyncio.sleep(1/20)  # 20 FPS
+            rgb, depth, camera_pose = self.get_camera_view()
+            try:
+                await self.shepherd.add_to_frame_queue(self.frame_count, rgb, depth, camera_pose)
+                self.frame_count += 1
+            except Exception:
+                 print("Error in frame producer.")
+                 await asyncio.sleep(1) # Wait a bit after error
+            # Sleep to control frame rate
+
+    async def consume_results(self):
         """Main run loop."""
         print("\nControls:")
         print("W/S - Move forward/backward")
@@ -188,61 +204,62 @@ class PyBulletShepherd:
         
         try:
             while True:
-                # print(self.shepherd.results_queue.qsize(), self.shepherd.frame_queue.qsize())
-                # Get camera view
-                rgb, depth, camera_pose = self.get_camera_view()
-                self.frame_count += 1
-                await self.shepherd.add_to_frame_queue(self.frame_count, rgb, depth, camera_pose)
-                
-                # Process frame with Shepherd
+                frame_id, results_obj = await self.shepherd.get_latest_results(self.frame_count)
 
-                if self.frame_count % self.frame_skip == 0:
-                    # print(camera_pose)
-
-                    # await self.shepherd.get_from_results_queue()
-                    frame_id, results_obj = await self.shepherd.get_latest_results(self.frame_count)
-                    results = []
-                    if results_obj is None:
-                        continue
-                    else:
-                        if len(results_obj) == 3:
-                            frame, depth, _ = results_obj
-                        elif len(results_obj) == 2:
-                            frame, results = results_obj
+                results = []
+                if results_obj is None:
+                    await asyncio.sleep(0.1)
+                    continue
+                else:
+                    result_type = results_obj[0]
+                    if result_type == ResultsType.FRAME_ONLY:
+                        frame = results_obj[1]
+                        results = []
+                    elif result_type == ResultsType.DETECTIONS:
+                        frame = results_obj[1]
+                        results = results_obj[2]
+                    elif result_type == ResultsType.ALL:
+                        frame = results_obj[1]
+                        results = results_obj[2]
 
 
-                # Create visualization
+                    # Create visualization
                     viz_frame = frame.copy()
                     
                     # Draw detections and masks
                     
                     for result in results:
-                        bbox = result["detection"]["bbox"]
-                        mask = result["mask"]
-                        object_id = result.get("object_id")
-                        similarity = result.get("similarity")
-                        
-                        # Get color
-                        color = self.get_object_color(
-                            object_id, 
-                            similarity if self.shepherd.config.default_query else None
-                        )
-                        
-                        # Draw bounding box
+                        color = None
+                        if result_type == ResultsType.ALL:
+                            mask = result["mask"]
+                            object_id = result.get("object_id")
+                            similarity = result.get("similarity")
+                            
+                            # Get color
+                            color = self.get_object_color(
+                                object_id, 
+                                similarity if self.shepherd.config.default_query else None
+                            )
+                            
+                        bbox = result["detection"]["bbox"] if "detection" in result else result["bbox"]
                         x1, y1, x2, y2 = map(int, bbox)
+                        if color is None: 
+                            color = (255, 255, 255)
+                        # Draw bounding box
                         cv2.rectangle(viz_frame, (x1, y1), (x2, y2), color, 2)
-                        
-                        # Draw mask
-                        mask_overlay = viz_frame.copy()
-                        mask_overlay[mask] = color
-                        viz_frame = cv2.addWeighted(viz_frame, 0.7, mask_overlay, 0.3, 0)
-                        
-                        # Add text
-                        text = f"ID: {object_id}"
-                        if similarity is not None:
-                            text += f" ({similarity:.2f})"
-                        cv2.putText(viz_frame, text, (x1, y1 - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+                        if result_type == ResultsType.ALL:
+                            # Draw mask
+                            mask_overlay = viz_frame.copy()
+                            mask_overlay[mask] = color
+                            viz_frame = cv2.addWeighted(viz_frame, 0.7, mask_overlay, 0.3, 0)
+                            
+                            # Add text
+                            text = f"ID: {object_id}"
+                            if similarity is not None:
+                                text += f" ({similarity:.2f})"
+                            cv2.putText(viz_frame, text, (x1, y1 - 10),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
                     
                     # Add query information
                     query_text = f"Query: {self.shepherd.config.default_query}"
@@ -288,7 +305,7 @@ class PyBulletShepherd:
                 
                 # Step simulation
                 p.stepSimulation()
-                time.sleep(0.01)
+                await asyncio.sleep(1/10)
                 
         finally:
             cv2.destroyAllWindows()
@@ -297,9 +314,10 @@ class PyBulletShepherd:
 async def main():
     pybulletshepherd = PyBulletShepherd()
     loop = asyncio.get_event_loop()
-    t1 = loop.create_task(pybulletshepherd.run())
-    t2 = loop.create_task(pybulletshepherd.shepherd.run())
-    await asyncio.gather(t1, t2)
+    t1 = loop.create_task(pybulletshepherd.run_sim(), name="Simulation_Task")
+    t2 = loop.create_task(pybulletshepherd.consume_results(), name="Display_Task")
+    t3 = loop.create_task(pybulletshepherd.shepherd.run(), name="Shepherd_Task")
+    await asyncio.gather(t1, t2, t3)
 
 if __name__ == "__main__":
     asyncio.run(main())
