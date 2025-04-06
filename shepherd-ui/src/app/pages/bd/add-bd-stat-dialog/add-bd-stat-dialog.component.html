@@ -1,0 +1,33 @@
+
+<div class="modal-wrapper">
+  <h1 mat-dialog-title>Ajouter une statistique</h1>
+  <div mat-dialog-content class="space-y-4">
+    <mat-form-field appearance="fill" class="w-full">
+      <mat-label>Nom</mat-label>
+      <input matInput [(ngModel)]="name" />
+    </mat-form-field>
+
+    <mat-form-field appearance="fill" class="w-full">
+      <mat-label>Statut</mat-label>
+      <mat-select [(value)]="status">
+        <mat-option value="Appris">Appris</mat-option>
+        <mat-option value="Non appris">Non appris</mat-option>
+        <mat-option value="Erreur">Erreur</mat-option>
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field appearance="fill" class="w-full">
+      <mat-label>Date</mat-label>
+      <input matInput [(ngModel)]="date" placeholder="ex: 24 Juin 2023" />
+    </mat-form-field>
+
+    <mat-form-field appearance="fill" class="w-full">
+      <mat-label>Précision</mat-label>
+      <input matInput type="number" [(ngModel)]="precision" placeholder="0-100" />
+    </mat-form-field>
+  </div>
+  <div mat-dialog-actions align="end" class="space-x-2">
+    <button mat-button (click)="onCancel()">Annuler</button>
+    <button mat-raised-button color="primary" (click)="onAdd()">Ajouter</button>
+  </div>
+</div>

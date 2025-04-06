@@ -1,0 +1,11 @@
+<mat-menu #languageMenu="matMenu">
+  @let selected = selected$ | async;
+    <button mat-menu-item *ngFor="let lang of options" (click)="onSelect(lang.value)" [class]="{ 'selected': lang.value === selected }">
+        <span class="fi fi-{{ lang.icon }}" style="margin-right: 8px;"></span>
+        {{ lang.label }}
+    </button>
+</mat-menu>
+
+<button mat-icon-button [matMenuTriggerFor]="languageMenu"  [matTooltip]="'LANGUAGE.CHANGE' | translate">
+    <mat-icon>language</mat-icon>
+</button>

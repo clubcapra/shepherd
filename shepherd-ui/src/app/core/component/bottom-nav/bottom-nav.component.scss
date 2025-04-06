@@ -1,0 +1,19 @@
+.bottom-nav {
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    background-color: var(--mat-sys-inverse-on-surface);
+}
+
+.bottom-nav a {
+    flex: 1;
+    text-align: center;
+}
+
+.bottom-nav a.active-tab {
+    background-color: var(--mat-sys-on-primary);
+    color: var(--mat-sys-inverse-surface);
+    border-radius: 4px;
+}

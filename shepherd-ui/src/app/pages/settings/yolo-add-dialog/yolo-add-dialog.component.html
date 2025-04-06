@@ -1,0 +1,17 @@
+<div class="modal-wrapper">
+  <h1 mat-dialog-title class="text-lg font-bold mb-2">
+    Ajouter une classe YOLO
+  </h1>
+
+  <div mat-dialog-content class="space-y-4">
+    <mat-form-field appearance="fill" class="w-full">
+      <mat-label>Nom de la classe</mat-label>
+      <input matInput [(ngModel)]="className" />
+    </mat-form-field>
+  </div>
+
+  <div mat-dialog-actions align="end" class="space-x-2">
+    <button mat-button (click)="onCancel()">Annuler</button>
+    <button mat-raised-button color="primary" (click)="onAdd()">Ajouter</button>
+  </div>
+</div>

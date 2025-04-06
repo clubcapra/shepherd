@@ -1,0 +1,68 @@
+<div class="flex gap-4 p-4">
+  <mat-card class="w-1/2 p-4">
+    <h2 class="text-xl font-bold mb-4">Hyperparamètres</h2>
+    <table mat-table [dataSource]="hyperparams" class="w-full mat-elevation-z2">
+
+      <ng-container matColumnDef="name">
+        <th mat-header-cell *matHeaderCellDef> Nom </th>
+        <td mat-cell *matCellDef="let element"> {{ element.name }} </td>
+      </ng-container>
+
+      <ng-container matColumnDef="value">
+        <th mat-header-cell *matHeaderCellDef> Valeur </th>
+        <td mat-cell *matCellDef="let element">
+          <input #inputField matInput type="text" [value]="element.value"
+            (change)="updateParamValue(element, inputField.value)">
+        </td>
+      </ng-container>
+
+      <ng-container matColumnDef="description">
+        <th mat-header-cell *matHeaderCellDef> Description </th>
+        <td mat-cell *matCellDef="let element"> {{ element.description }} </td>
+      </ng-container>
+
+      <tr mat-header-row *matHeaderRowDef="hyperParamsColumns"></tr>
+      <tr mat-row *matRowDef="let row; columns: hyperParamsColumns"></tr>
+    </table>
+  </mat-card>
+
+  <mat-card class="w-1/2 p-4">
+    <div class="flex justify-between items-center mb-4">
+      <h2 class="text-xl font-bold">Classes de détection YOLO</h2>
+      <button mat-icon-button (click)="openAddYoloDialog()">
+        <mat-icon>add</mat-icon>
+      </button>
+    </div>
+    <table mat-table [dataSource]="yoloClasses" class="w-full mat-elevation-z2">
+
+      <ng-container matColumnDef="className">
+        <th mat-header-cell *matHeaderCellDef> Classe </th>
+        <td mat-cell *matCellDef="let element"> {{ element.className }} </td>
+      </ng-container>
+
+      <ng-container matColumnDef="status">
+        <th mat-header-cell *matHeaderCellDef> Statut </th>
+        <td mat-cell *matCellDef="let element">
+          <span *ngIf="element.status === 'Appris'" class="text-green-600">Appris</span>
+          <span *ngIf="element.status === 'Non appris'" class="text-red-600">Non appris</span>
+          <span *ngIf="element.status === 'Erreur'" class="text-yellow-600">Erreur</span>
+        </td>
+      </ng-container>
+
+      <ng-container matColumnDef="date">
+        <th mat-header-cell *matHeaderCellDef> Date </th>
+        <td mat-cell *matCellDef="let element"> {{ element.date }} </td>
+      </ng-container>
+
+      <ng-container matColumnDef="precision">
+        <th mat-header-cell *matHeaderCellDef> Degré de précision </th>
+        <td mat-cell *matCellDef="let element">
+          <mat-progress-bar mode="determinate" [value]="element.precision"></mat-progress-bar>
+        </td>
+      </ng-container>
+
+      <tr mat-header-row *matHeaderRowDef="yoloColumns"></tr>
+      <tr mat-row *matRowDef="let row; columns: yoloColumns"></tr>
+    </table>
+  </mat-card>
+</div>

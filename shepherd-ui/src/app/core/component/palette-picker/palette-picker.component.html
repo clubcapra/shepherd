@@ -1,0 +1,16 @@
+<mat-menu #paletteMenu="matMenu">
+  @let selected = selected$ | async;
+  @for (option of Object.values(options); track option.value){
+    @let colors = option.colors;
+    <button mat-menu-item (click)="onSelect(option.value)" [class]="{ 'selected': option.value === selected }">
+      <div class="theme-preview">
+        <span class="theme-chip" [ngStyle]="{ '--theme-primary': colors.primary, '--theme-secondary': colors.secondary }"></span>
+        <span>{{ option.i18n | translate }}</span>
+      </div>
+    </button>
+  }
+</mat-menu>
+
+<button mat-icon-button [matMenuTriggerFor]="paletteMenu" [matTooltip]="'PALETTE.CHANGE' | translate">
+  <mat-icon>palette</mat-icon>
+</button>
