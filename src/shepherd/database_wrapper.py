@@ -4,9 +4,8 @@ Database wrapper.
 
 import os
 import random
-import time
 from concurrent.futures import Future
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple
 
 import chromadb
 import numpy as np
@@ -14,9 +13,9 @@ import open3d as o3d
 import torch
 from dbscan import DBSCAN
 from sklearn.neighbors import NearestNeighbors
+from chamferdist import ChamferDistance
 
 from .utils.camera import CameraUtils
-
 
 class DatabaseWrapper:
     """
@@ -28,7 +27,7 @@ class DatabaseWrapper:
         collection_name: str = "detection_embeddings",
         camera_utils: Optional[CameraUtils] = None,
         distance_threshold: float = 1.5,
-        similarity_threshold: float = 0.3,
+        similarity_threshold: float = 0.7,
         cluster_eps: float = 0.2,
         cluster_min_samples: int = 3,
     ):
@@ -38,6 +37,7 @@ class DatabaseWrapper:
             name=collection_name, metadata={"hnsw:space": "cosine"}
         )
         self.initialize_collection()
+        # TODO: explore if this is optimal for memory efficiency - perhaps a second vector DB for point clouds would be better?
         self.point_clouds = {}  # Store point clouds in memory
         self.camera = camera_utils if camera_utils is not None else CameraUtils()
 
@@ -49,8 +49,9 @@ class DatabaseWrapper:
 
         # Initialize nearest neighbors
         self.nn = NearestNeighbors(n_neighbors=3, algorithm="ball_tree")
+        self.chamfer = ChamferDistance()
         self.query_embedding = None  # Add query embedding storage
-        self.pending_captions = {}  # Store pending caption futures
+        self.pending_captions = {}  # Store pending caption futures    
 
     def _clean_point_cloud(
         self,
@@ -82,6 +83,59 @@ class DatabaseWrapper:
         except (ValueError, np.linalg.LinAlgError, RuntimeError) as e:
             print(f"Error in point cloud cleaning: {e}")
             return point_cloud
+        
+    def _preprocess_point_clouds(self, anchor, candidate, align=True):
+        """
+        Preprocess point clouds for similarity comparison:
+        1. Normalize to account for different scales
+        2. Optionally align using ICP
+        
+        Parameters:
+        anchor, candidate: numpy arrays of shape (n_points, 3)
+        align: boolean, whether to perform ICP alignment
+        
+        Returns:
+        Processed versions of anchor and candidate
+        """
+        # Step 1: Normalize both point clouds
+        # Center each point cloud around its centroid
+        centroid_a = np.mean(anchor, axis=0)
+        centroid_b = np.mean(candidate, axis=0)
+        
+        centered_a = anchor - centroid_a
+        centered_b = candidate - centroid_b
+        
+        # Scale to unit standard deviation
+        scale_a = np.std(np.linalg.norm(centered_a, axis=1))
+        scale_b = np.std(np.linalg.norm(centered_b, axis=1))
+        
+        normalized_a = centered_a / scale_a
+        normalized_b = centered_b / scale_b
+        
+        if not align:
+            return normalized_a, normalized_b
+        
+        # Step 2: Align using ICP if requested
+        # Convert to Open3D point clouds for ICP
+        pcd_a = o3d.geometry.PointCloud()
+        pcd_b = o3d.geometry.PointCloud()
+        
+        pcd_a.points = o3d.utility.Vector3dVector(normalized_a)
+        pcd_b.points = o3d.utility.Vector3dVector(normalized_b)
+        
+        # Perform ICP
+        # Set parameters - adjust max_correspondence_distance as needed
+        threshold = 0.05  # Max correspondence distance
+        trans_init = np.identity(4)  # Initial transformation
+        
+        reg_p2p = o3d.pipelines.registration.registration_icp(
+            pcd_b, pcd_a, threshold, trans_init,
+            o3d.pipelines.registration.TransformationEstimationPointToPoint())
+        
+        # Apply transformation to point cloud B
+        aligned_b = np.asarray(pcd_b.transform(reg_p2p.transformation).points)
+        
+        return normalized_a, aligned_b
 
     def _process_new_detection(
         self, point_cloud: np.ndarray, embedding: np.ndarray, camera_pose: Dict
@@ -123,7 +177,7 @@ class DatabaseWrapper:
             print(f"Error in detection processing: {e}")
             return np.array([]), embedding
 
-    def _compute_geometric_similarity(
+    def _compute_geo_similarity(
         self, points1: np.ndarray, points2: np.ndarray, nn_threshold: float = 0.1
     ) -> float:
         """Compute geometric similarity using nearest neighbor ratio."""
@@ -173,7 +227,6 @@ class DatabaseWrapper:
             return None
 
         try:
-            best_match = None
             best_similarity = -float("inf")
 
             # 1. ChromaDB Filtering:
@@ -186,45 +239,26 @@ class DatabaseWrapper:
             if not results or not results["embeddings"]: 
                 return None
             
-            ids = results["ids"][0] 
-            embeddings_2d = results["embeddings"][0]
+            ids = results["ids"][0]
 
-            # 2. Radius-based NN for Geometric Similarity
-            nn_geo = NearestNeighbors(radius=self.distance_threshold, algorithm="ball_tree") 
-            nn_geo.fit(point_cloud)
+            # 2. Chamfer distance between point clouds
 
+            best_id = ids[0]
             for i in range(len(ids)):
                 obj_id = ids[i]
-                stored_embedding = embeddings_2d[i]
                 stored_cloud = self.point_clouds.get(obj_id)
-
                 if stored_cloud is None or len(stored_cloud) == 0:
                     continue
 
-                # 3. Geometric Similarity (using radius search)
-                geo_sim_sum = 0
-                for point in stored_cloud:
-                    indices = nn_geo.radius_neighbors(point.reshape(1, -1), return_distance=False)[0]
-                    nearby_points = point_cloud[indices]
-
-                    if len(nearby_points) > 0:
-                        geo_sim_sum += 1 
-
-                geo_sim = geo_sim_sum / len(stored_cloud) if len(stored_cloud) > 0 else 0
-
-                if geo_sim > 0.1:
-                    # 4. Semantic Similarity
-                    #sem_sim = self._compute_semantic_similarity(embedding, np.array(stored_embedding))
-
-                    # 5. Combined Similarity
-                    total_sim = geo_sim 
-                    
-                    if total_sim > best_similarity:
-                        best_similarity = total_sim
-                        best_match = obj_id
+                # anchor_pt, compared_pt = self._preprocess_point_clouds(anchor=point_cloud, candidate=stored_cloud, align=False)
+                
+                similarity = self._compute_geo_similarity(point_cloud, stored_cloud)
+                if best_similarity < similarity:
+                    best_similarity = similarity
+                    best_id = obj_id
 
             if best_similarity > self.similarity_threshold:
-                return best_match
+                return best_id, best_similarity
 
             return None
 
@@ -301,10 +335,11 @@ class DatabaseWrapper:
             return None, False
 
         # Find nearby object
-        nearby_id = self._find_nearby_object(cleaned_points, processed_embedding)
+        nearby_obj = self._find_nearby_object(cleaned_points, processed_embedding)
 
-        if nearby_id is not None:
+        if nearby_obj is not None:
             # Check if object already has a caption
+            nearby_id, similarity = nearby_obj
             results = self.collection.get(ids=[nearby_id], include=["metadatas"])
             existing_metadata = results["metadatas"][0]
             needs_caption = (
@@ -312,6 +347,7 @@ class DatabaseWrapper:
                 and nearby_id not in self.pending_captions
             )
 
+            print(f"Merging object {nearby_id} with similarity {similarity}")
             return (
                 self._merge_objects(
                     nearby_id, processed_embedding, metadata, cleaned_points
@@ -325,11 +361,13 @@ class DatabaseWrapper:
         )
 
         self.point_clouds[new_id] = cleaned_points
+        print(f"Adding new object {new_id}")
         self.collection.add(
             embeddings=[processed_embedding.tolist()],
             ids=[new_id],
             metadatas=[metadata],
         )
+
         return new_id, True
 
     def _merge_objects(
@@ -339,7 +377,10 @@ class DatabaseWrapper:
         new_metadata: Dict,
         new_point_cloud: np.ndarray,
     ) -> str:
-        """Merge new object with existing one."""
+        """
+        Merge new object with existing one while preserving the world coordinate system.
+        This function does not normalize point clouds for merging, only for alignment.
+        """
         # Get existing object data
         results = self.collection.get(
             ids=[existing_id], include=["embeddings", "metadatas"]
@@ -348,48 +389,64 @@ class DatabaseWrapper:
         old_embedding = np.array(results["embeddings"][0])
         old_point_cloud = self.point_clouds.get(existing_id, np.array([]))
 
-        # Merge point clouds with improved cleaning
-        if len(old_point_cloud) > 0 and len(new_point_cloud) > 0:
-            # Combine clouds
-            combined_cloud = np.vstack([old_point_cloud, new_point_cloud])
-
-            # Remove duplicates and outliers
-            if len(combined_cloud) > 0:
-                # Use DBSCAN for clustering
-                labels, _ = DBSCAN(
-                    combined_cloud,
-                    eps=0.05,  # 5cm clustering threshold
-                    min_samples=5,
-                )
-
-                # Keep points from largest cluster
-                if len(np.unique(labels)) > 1:
-                    largest_cluster = np.argmax(np.bincount(labels[labels >= 0]))
-                    merged_cloud = combined_cloud[labels == largest_cluster]
-                else:
-                    merged_cloud = combined_cloud
-
-                # Voxelize to remove duplicates
-                voxel_size = 0.02  # 2cm voxels
-                voxel_dict = {}
-                for point in merged_cloud:
-                    voxel_key = tuple(np.round(point / voxel_size))
-                    if voxel_key not in voxel_dict:
-                        voxel_dict[voxel_key] = []
-                    voxel_dict[voxel_key].append(point)
-
-                merged_cloud = np.array(
-                    [np.median(points, axis=0) for points in voxel_dict.values()]
-                )
+        # If one cloud is empty, use the non-empty one
+        if len(old_point_cloud) == 0:
+            merged_cloud = new_point_cloud
+        elif len(new_point_cloud) == 0:
+            merged_cloud = old_point_cloud
         else:
-            merged_cloud = (
-                new_point_cloud if len(new_point_cloud) > 0 else old_point_cloud
-            )
+            # Store original point clouds before any transformation
+            orig_old = old_point_cloud.copy()
+            orig_new = new_point_cloud.copy()
+            
+            # Create Open3D point clouds for registration
+            pcd_old = o3d.geometry.PointCloud()
+            pcd_new = o3d.geometry.PointCloud()
+            
+            pcd_old.points = o3d.utility.Vector3dVector(old_point_cloud)
+            pcd_new.points = o3d.utility.Vector3dVector(new_point_cloud)
+            
+            # Compute normals for better registration
+            pcd_old.estimate_normals()
+            pcd_new.estimate_normals()
+            
+            # Get transformation matrix to align new_point_cloud to old_point_cloud
+            # BUT do not apply it to change the actual points in the world coordinate system
+            distance_threshold = 0.05
+            
+            # First compute centroids to roughly align before ICP
+            centroid_old = np.mean(old_point_cloud, axis=0)
+            centroid_new = np.mean(new_point_cloud, axis=0)
+            
+            # Initial transformation to align centroids
+            init_translation = np.eye(4)
+            init_translation[:3, 3] = centroid_old - centroid_new
+            
+            # Use ICP with point-to-plane for better alignment
+            icp_result = o3d.pipelines.registration.registration_icp(
+                pcd_new, pcd_old, distance_threshold, init_translation,
+                o3d.pipelines.registration.TransformationEstimationPointToPlane())
+            
+            # DO NOT transform the points - just combine them in their original coordinates
+            # This preserves the world coordinate system
+            combined_points = np.vstack([orig_old, orig_new])
+            
+            # Clean the combined point cloud to remove outliers
+            combined_pcd = o3d.geometry.PointCloud()
+            combined_pcd.points = o3d.utility.Vector3dVector(combined_points)
+            
+            # Use statistical outlier removal 
+            pcd_cleaned, _ = combined_pcd.remove_statistical_outlier(
+                nb_neighbors=20, std_ratio=2.0)
+            
+            # Use voxel downsampling to reduce density and remove duplicates
+            voxel_size = 0.02  # Adjust based on desired resolution
+            pcd_downsampled = pcd_cleaned.voxel_down_sample(voxel_size)
+            
+            merged_cloud = np.asarray(pcd_downsampled.points)
 
         # Update embedding with weighted average
-        weight_old = len(old_point_cloud) / (
-            len(old_point_cloud) + len(new_point_cloud)
-        )
+        weight_old = len(old_point_cloud) / max(len(old_point_cloud) + len(new_point_cloud), 1)
         weight_new = 1 - weight_old
         avg_embedding = old_embedding * weight_old + new_embedding * weight_new
         avg_embedding = avg_embedding / np.linalg.norm(avg_embedding)

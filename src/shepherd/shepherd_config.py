@@ -70,7 +70,7 @@ class ShepherdConfig:
 
         # Add default query
         self.default_query = "nice place to sit"
-        print("default query :", self.default_query)
+        print("Default query :", self.default_query)
 
     def get(self, key: str, default: Any = None) -> Any:
         """

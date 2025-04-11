@@ -8,11 +8,12 @@ from typing import Dict, List, Optional
 import cv2
 import numpy as np
 import torch
+from datetime import datetime
+import os
 
 from .database_wrapper import DatabaseWrapper
 from .models.implementations import BLIP, CLIP, DAN, SAM, YOLO
 from .shepherd_config import ShepherdConfig
-
 
 class Shepherd:
     """
@@ -126,6 +127,7 @@ class Shepherd:
             results = []
             for detection, mask in zip(detections, masks):
                 # Get bounding box coordinates from mask
+                # TODO: Demontrer que les masks sortent dans le meme ordre que les bbox, permettant d'utiliser les bbox
                 x, y, w, h = cv2.boundingRect(mask.astype(np.uint8))
 
                 # Ensure minimum size for processing
@@ -141,6 +143,7 @@ class Shepherd:
                 masked_region = frame[y1:y2, x1:x2]
 
                 # Get embedding
+                # TODO: Creer l'embedding avec le bbox et pas le mask (depend du todo precedant)
                 embedding = self.embedder.encode_image(masked_region)
 
                 # Get depth information and create point cloud
