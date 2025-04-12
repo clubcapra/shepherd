@@ -1,0 +1,12 @@
+<mat-toolbar color="secondary" class="top-bar">
+  <button *ngIf="(isMobile$ | async)" mat-icon-button (click)="onToggleSidenav()">
+    <mat-icon>menu</mat-icon>
+  </button>
+  <a routerLink="/">
+    <span>{{ 'SHEPHERD' | translate }}</span>
+  </a>
+  <span class="spacer"></span>
+  <app-theme-selection></app-theme-selection>
+  <app-palette-picker></app-palette-picker>
+  <app-language-picker></app-language-picker>
+</mat-toolbar>

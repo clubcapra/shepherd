@@ -1,0 +1,23 @@
+.theme-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  .theme-chip {
+    --theme-primary: var(--mat-sys-primary);
+    --theme-secondary: var(--mat-sys-secondary);
+
+    width: 2em;
+    height: 2em;
+    border-radius: 50%;
+    position: relative;
+    background-color: var(--theme-primary);
+    outline: solid 0.75ch var(--theme-secondary);
+    outline-offset: -1ch;
+  }
+}
+
+.selected {
+  --mat-menu-item-label-text-weight: bold;
+  --mat-menu-item-label-text-color: var(--mat-sys-primary);
+}

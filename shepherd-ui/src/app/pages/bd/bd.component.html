@@ -1,0 +1,48 @@
+<div class="p-4">
+  <mat-card>
+    <div class="flex flex-col md:flex-row justify-between items-center mb-4">
+      <div class="flex items-center mb-2 md:mb-0">
+        <h2 class="text-xl font-bold mr-4">Statistique de la BD</h2>
+        <mat-form-field class="w-64">
+          <mat-label>Rechercher par nom</mat-label>
+          <input matInput (keyup)="applyFilter($event)" placeholder="Recherche" />
+          <mat-icon matSuffix>search</mat-icon>
+        </mat-form-field>
+      </div>
+      <button mat-icon-button (click)="openAddStatDialog()">
+        <mat-icon>add</mat-icon>
+      </button>
+    </div>
+
+    <table mat-table [dataSource]="dataSource" matSort class="w-full mat-elevation-z2">
+      <ng-container matColumnDef="name">
+        <th mat-header-cell *matHeaderCellDef mat-sort-header>Nom</th>
+        <td mat-cell *matCellDef="let element">{{ element.name }}</td>
+      </ng-container>
+
+      <ng-container matColumnDef="status">
+        <th mat-header-cell *matHeaderCellDef mat-sort-header>Statut</th>
+        <td mat-cell *matCellDef="let element">
+          <span *ngIf="element.status === 'Appris'" class="text-green-600">Appris</span>
+          <span *ngIf="element.status === 'Non appris'" class="text-red-600">Non appris</span>
+          <span *ngIf="element.status === 'Erreur'" class="text-yellow-600">Erreur</span>
+        </td>
+      </ng-container>
+
+      <ng-container matColumnDef="date">
+        <th mat-header-cell *matHeaderCellDef mat-sort-header>Date</th>
+        <td mat-cell *matCellDef="let element">{{ element.date }}</td>
+      </ng-container>
+
+      <ng-container matColumnDef="precision">
+        <th mat-header-cell *matHeaderCellDef mat-sort-header>Degré de précision</th>
+        <td mat-cell *matCellDef="let element">
+          <mat-progress-bar mode="determinate" [value]="element.precision"></mat-progress-bar>
+        </td>
+      </ng-container>
+
+      <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+      <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
+    </table>
+  </mat-card>
+</div>

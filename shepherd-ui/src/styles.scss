@@ -1,0 +1,16 @@
+@use '@angular/material' as mat;
+@use '../public/assets/styles/palettes.scss' as palettes;
+@use '../public/assets/styles/material/material.scss' as material;
+@use 'tailwindcss' as tailwind;
+
+html {
+  background-color: black;
+}
+
+body {
+  height: 100dvh;
+  margin: 0;
+  padding: 0;
+  background-color: var(--mat-sys-background);
+  color: var(--mat-sys-on-background);
+}

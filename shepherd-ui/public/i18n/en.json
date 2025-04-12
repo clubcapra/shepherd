@@ -1,0 +1,31 @@
+{
+  "APP_TITLE": "My Application",
+  "WELCOME_MESSAGE": "Welcome to My Application",
+  "INTRO_TEXT": "Discover all the amazing features of our app!",
+  "START_BUTTON": "Get Started",
+  "THEME": {
+    "CHANGE": "Change Theme",
+    "LIGHT": "Light",
+    "DARK": "Dark"
+  },
+  "PALETTE": {
+    "CHANGE": "Change Palette",
+    "DEFAULT": "Default",
+    "NORD": "Nord"
+  },
+  "LANGUAGE": {
+    "CHANGE": "Change Language",
+    "ENGLISH": "English",
+    "FRENCH": "French"
+  },
+  "SHEPHERD": "SHEPHERD",
+  "HOME": {
+    "TITLE": "Home"
+  },
+  "SETTINGS": {
+    "TITLE": "Settings"
+  },
+  "BD": {
+    "TITLE": "Database"
+  }
+}

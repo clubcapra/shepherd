@@ -1,0 +1,38 @@
+@use '@angular/material' as mat;
+@use "./palettes/default-palette" as default;
+@use "./palettes/nord-palette" as nord;
+@include mat.core;
+mat.$theme-ignore-duplication-warnings: true;
+
+
+@mixin theme-palette($primary, $tertiary) {
+
+  &:not(.dark-theme) {
+    @include palette($primary, $tertiary, light)
+  }
+
+  &.dark-theme {
+    @include palette($primary, $tertiary, dark)
+  }
+}
+
+@mixin palette($primary, $tertiary, $type) {
+  @include mat.theme((
+    color: (
+      theme-type: $type,
+      primary: $primary,
+      tertiary: $tertiary,
+    ),
+    typography: Roboto,
+    density: 0,
+  ));
+
+}
+
+.default-palette {
+  @include theme-palette(default.$primary-palette, default.$tertiary-palette)
+}
+
+.nord-palette {
+  @include theme-palette(nord.$primary-palette, nord.$tertiary-palette)
+}

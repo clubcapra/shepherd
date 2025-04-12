@@ -1,0 +1,85 @@
+{
+  "name": "shepherd-ui",
+  "version": "0.0.0",
+  "scripts": {
+    "ng": "ng",
+    "start": "ng serve --watch",
+    "build": "ng build",
+    "watch": "ng build --watch --configuration development",
+    "ssr:build": "ng run shepherd-ui:build-ssr",
+    "ssr:serve": "node dist/shepherd-ui/server/server.mjs",
+    "ssr": "npm run ssr:build && npm run ssr:serve",
+    "prepare": "husky install",
+    "lint": "ng lint",
+    "test": "ng test",
+    "format:scss": "npx prettier --write \"src/**/*.scss\"",
+    "lint:scss": "npx stylelint --fix \"src/**/*.scss\"",
+    "format:all": "npm run format:scss && npm run lint:scss"
+  },
+  "lint-staged": {
+    "*.ts": [
+      "eslint --fix"
+    ],
+    "*.tsx": [
+      "eslint --fix"
+    ],
+    "*.scss": [
+      "npx prettier --write",
+      "npx stylelint --fix --"
+    ]
+  },
+  "private": true,
+  "dependencies": {
+    "@angular/animations": "^19.1.0",
+    "@angular/cdk": "^19.1.0",
+    "@angular/common": "^19.1.0",
+    "@angular/compiler": "^19.1.0",
+    "@angular/core": "^19.1.0",
+    "@angular/forms": "^19.1.0",
+    "@angular/material": "^19.1.0",
+    "@angular/platform-browser": "^19.1.0",
+    "@angular/platform-browser-dynamic": "^19.1.0",
+    "@angular/platform-server": "^19.2.1",
+    "@angular/router": "^19.1.0",
+    "@angular/ssr": "^19.2.1",
+    "@ngrx/effects": "^19.0.1",
+    "@ngrx/router-store": "^19.0.1",
+    "@ngrx/store": "^19.0.1",
+    "@ngx-translate/core": "^16.0.4",
+    "@ngx-translate/http-loader": "^16.0.1",
+    "@types/node": "^22.13.9",
+    "@tailwindcss/postcss": "^4.0.13",
+    "ngx-translate-messageformat-compiler": "^7.1.0",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0",
+    "typescript": "^5.8.2",
+    "zone.js": "~0.15.0"
+  },
+  "devDependencies": {
+    "@angular-devkit/build-angular": "^19.1.1",
+    "@angular/cli": "^19.1.1",
+    "@angular/compiler-cli": "^19.1.0",
+    "@angular/localize": "^19.1.1",
+    "@commitlint/cli": "^19.7.1",
+    "@commitlint/config-conventional": "^19.7.1",
+    "@ngrx/store-devtools": "^19.0.1",
+    "@types/jasmine": "~5.1.0",
+    "angular-eslint": "19.1.0",
+    "autoprefixer": "^10.4.21",
+    "eslint": "^9.20.0",
+    "husky": "^8.0.0",
+    "jasmine-core": "~5.5.0",
+    "jasmine-spec-reporter": "^7.0.0",
+    "karma": "~6.4.0",
+    "karma-chrome-launcher": "~3.2.0",
+    "karma-coverage": "~2.2.0",
+    "karma-jasmine": "~5.1.0",
+    "karma-jasmine-html-reporter": "~2.1.0",
+    "postcss": "^8.5.3",
+    "prettier": "^3.5.3",
+    "stylelint": "^16.15.0",
+    "stylelint-config-standard-scss": "^14.0.0",
+    "stylelint-scss": "^6.11.1",
+    "tailwindcss": "^4.0.13"
+  }
+}
