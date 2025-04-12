@@ -368,6 +368,13 @@ def main():
                 query = input("\nEnter query: ")
                 shepherd.update_query(query)
                 continue
+            elif key == ord('r'):
+                    while True:
+                        question = input("\nEnter question or write Thanks to leave: ")
+                        if question.lower() != "thanks":
+                            shepherd.reason(obs, question)
+                        else:
+                            break
             elif key == ord("s"):
                 env.save_current_point_cloud()
                 continue
