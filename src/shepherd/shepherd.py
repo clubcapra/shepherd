@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 from .database_wrapper import DatabaseWrapper
-from .models.implementations import BLIP, CLIP, DAN, SAM, YOLO
+from .models.implementations import BLIP, CLIP, DAN, SAM, YOLO, InternVL2
 from .shepherd_config import ShepherdConfig
 
 
@@ -65,6 +65,11 @@ class Shepherd:
             model_path=config.get("model_paths.clip", "ViT-B/32"), device=self.device
         )
 
+        self.reasoner = InternVL2(
+            model_path='OpenGVLab/InternVL2_5-4B-MPO',
+            device=self.device
+        )
+
         if config.get("use_depth", True):
             self.depth_estimator = DAN(
                 model_path=config.get("model_paths.dan"), device=self.device
@@ -78,7 +83,8 @@ class Shepherd:
         self.query_embedding = None
         if self.config.default_query:
             self.update_query(self.config.default_query)
-
+        
+        
     def update_query(self, query_text: str):
         """Update the query and compute its embedding."""
         self.config.default_query = query_text
@@ -271,3 +277,6 @@ class Shepherd:
             points = points[valid_points]
 
         return points
+    
+    def reason(self, image, question):
+        print(self.reasoner.reason(image, question))

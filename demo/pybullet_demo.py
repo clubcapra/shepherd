@@ -256,9 +256,9 @@ class PyBulletShepherd:
                 elif key == ord('e'):
                     self.camera_yaw += self.turn_speed
                 elif key == ord('r'):
-                    self.camera_pitch = min(self.camera_pitch + self.turn_speed, 89)
-                elif key == ord('f'):
-                    self.camera_pitch = max(self.camera_pitch - self.turn_speed, -89)
+                    question = input("\nEnter question: ")
+                    self.shepherd.reason(rgb, question)
+                    pass
                 elif key == ord('k'):
                     query = input("\nEnter query: ")
                     self.shepherd.update_query(query)
@@ -269,7 +269,6 @@ class PyBulletShepherd:
                 
                 # Step simulation
                 p.stepSimulation()
-                time.sleep(0.01)
                 
         finally:
             cv2.destroyAllWindows()
