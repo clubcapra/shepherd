@@ -14,6 +14,7 @@ import open3d as o3d
 import torch
 from dbscan import DBSCAN
 from sklearn.neighbors import NearestNeighbors
+from chamferdist import ChamferDistance
 
 from .utils.camera import CameraUtils
 
@@ -168,55 +169,89 @@ class DatabaseWrapper:
             return 0.0
 
     def _find_nearby_object(
-        self, point_cloud: np.ndarray, embedding: np.ndarray
+        self, point_cloud: np.ndarray, embedding: np.ndarray, inverted=True,
     ) -> Optional[str]:
         """Find nearby object using combined geometric and semantic similarity."""
         if len(self.point_clouds) == 0 or point_cloud is None or len(point_cloud) == 0:
             return None
 
         try:
-            best_match = None
-            best_similarity = -float("inf")
 
-            # Get embeddings from database
-            # TODO: Déterminer si il y a une perte de performance à laisser la BD nous 
-            # donner le vecteur le plus près au lieu de faire une boucle sur tous les vecteurs.
-            # Il est possible de configurer la BD pour utiliser cosine sim. comme métrique et lui demander
-            # de renvoyer top k résultats
-            results = self.collection.get(include=["embeddings"])
+            # This if else is terrible but project due in three days sorry
+            if inverted:
+                best_similarity = -float("inf")
 
-            # Check each existing object
-            for obj_id, stored_cloud in self.point_clouds.items():
-                if len(stored_cloud) == 0:
-                    continue
+                # 1. ChromaDB Filtering:
+                results = self.collection.query(
+                    query_embeddings=[embedding.tolist()], 
+                    n_results=5, 
+                    include=["embeddings"]  
+                )
 
-                # Get stored embedding
-                stored_embedding = results["embeddings"][
-                    list(self.point_clouds.keys()).index(obj_id)
-                ]
+                if not results or not results["embeddings"]: 
+                    return None
+                
+                ids = results["ids"][0]
 
-                # Compute geometric similarity
-                geo_sim = self._compute_geometric_similarity(point_cloud, stored_cloud)
+                # 2. Chamfer distance between point clouds
 
-                # Only compute semantic similarity if there's geometric overlap
-                if geo_sim > 0.1:
-                    # Compute semantic similarity
-                    sem_sim = self._compute_semantic_similarity(
-                        embedding, np.array(stored_embedding)
-                    )
+                best_id = ids[0]
+                for i in range(len(ids)):
+                    obj_id = ids[i]
+                    stored_cloud = self.point_clouds.get(obj_id)
+                    if stored_cloud is None or len(stored_cloud) == 0:
+                        continue
 
-                    # Combined similarity score
-                    total_sim = geo_sim + sem_sim
+                    # anchor_pt, compared_pt = self._preprocess_point_clouds(anchor=point_cloud, candidate=stored_cloud, align=False)
+                    
+                    similarity = self._compute_geometric_similarity(point_cloud, stored_cloud)
+                    if best_similarity < similarity:
+                        best_similarity = similarity
+                        best_id = obj_id
 
-                    if total_sim > best_similarity:
-                        best_similarity = total_sim
-                        best_match = obj_id
+                if best_similarity > self.similarity_threshold:
+                    return best_id, best_similarity
 
-            # Return match only if similarity is above threshold
-            if best_similarity > self.similarity_threshold:
-                return best_match
+                return None
+                
+            else:
+                best_match = None
+                best_similarity = -float("inf")
 
-            return None
+                results = self.collection.get(include=["embeddings"])
+
+                # Check each existing object
+                for obj_id, stored_cloud in self.point_clouds.items():
+                    if len(stored_cloud) == 0:
+                        continue
+
+                    # Get stored embedding
+                    stored_embedding = results["embeddings"][
+                        list(self.point_clouds.keys()).index(obj_id)
+                    ]
+
+                    # Compute geometric similarity
+                    geo_sim = self._compute_geometric_similarity(point_cloud, stored_cloud)
+
+                    # Only compute semantic similarity if there's geometric overlap
+                    if geo_sim > 0.1:
+                        # Compute semantic similarity
+                        sem_sim = self._compute_semantic_similarity(
+                            embedding, np.array(stored_embedding)
+                        )
+
+                        # Combined similarity score
+                        total_sim = geo_sim + sem_sim
+
+                        if total_sim > best_similarity:
+                            best_similarity = total_sim
+                            best_match = obj_id
+
+                # Return match only if similarity is above threshold
+                if best_similarity > self.similarity_threshold:
+                    return best_match, best_similarity
+
+                return None
 
         except Exception as e:
             print(f"Error in finding nearby object: {e}")
@@ -291,10 +326,11 @@ class DatabaseWrapper:
             return None, False
 
         # Find nearby object
-        nearby_id = self._find_nearby_object(cleaned_points, processed_embedding)
+        nearby_obj = self._find_nearby_object(cleaned_points, processed_embedding)
 
-        if nearby_id is not None:
+        if nearby_obj is not None:
             # Check if object already has a caption
+            nearby_id, similarity = nearby_obj
             results = self.collection.get(ids=[nearby_id], include=["metadatas"])
             existing_metadata = results["metadatas"][0]
             needs_caption = (
@@ -302,6 +338,7 @@ class DatabaseWrapper:
                 and nearby_id not in self.pending_captions
             )
 
+            print(f"Merging object {nearby_id} with similarity {similarity}")
             return (
                 self._merge_objects(
                     nearby_id, processed_embedding, metadata, cleaned_points
